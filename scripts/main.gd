@@ -5,6 +5,7 @@ extends Node2D
 @onready var board: Board = $Board
 @onready var pegs_container: Node2D = $PegsContainer
 @onready var ui: CanvasLayer = $UI
+@onready var move_count_label: Label = $UI/UIRoot/GameInfo/MoveCount
 @onready var peg_count_label: Label = $UI/UIRoot/GameInfo/PegCount
 @onready var rating_label: Label = $UI/UIRoot/GameInfo/Rating
 @onready var game_over_panel: Panel = $UI/UIRoot/GameOverPanel
@@ -14,6 +15,13 @@ extends Node2D
 @onready var meow_player: AudioStreamPlayer = $MeowPlayer
 @onready var hiss_player: AudioStreamPlayer = $HissPlayer
 @onready var about_panel: Panel = $UI/UIRoot/AboutPanel
+@onready var undo_btn: Button = $UI/UIRoot/UndoBtn
+@onready var confirm_dialog: Panel = $UI/UIRoot/ConfirmDialog
+@onready var confirm_message: Label = $UI/UIRoot/ConfirmDialog/VBoxContainer/Message
+
+# 确认弹窗的操作类型
+enum ConfirmAction { RESTART, MENU }
+var pending_confirm_action: ConfirmAction = ConfirmAction.RESTART
 
 var game_manager: GameManager
 var peg_scene: PackedScene
@@ -34,11 +42,16 @@ func _ready() -> void:
 	add_child(game_manager)
 	
 	game_manager.peg_count_changed.connect(_on_peg_count_changed)
+	game_manager.move_count_changed.connect(_on_move_count_changed)
 	game_manager.game_over.connect(_on_game_over)
+	game_manager.chain_jump_available.connect(_on_chain_jump_available)
+	game_manager.undo_available_changed.connect(_on_undo_available_changed)
+	game_manager.undo_performed.connect(_on_undo_performed)
 	
 	board.cell_clicked.connect(_on_cell_clicked)
 	
 	game_over_panel.visible = false
+	confirm_dialog.visible = false
 	
 	# Web 平台不支持关闭游戏，隐藏关闭按钮
 	var close_btn = get_node_or_null("UI/UIRoot/CloseBtn")
@@ -61,6 +74,21 @@ func _ready() -> void:
 		var hiss = load("res://assets/sound/cat-hissing.wav")
 		if hiss:
 			hiss_player.stream = hiss
+	
+	# 从主菜单获取棋盘类型
+	var board_type = GameManager.BoardType.ENGLISH_33  # 默认英式33格
+	if get_tree().has_meta("game_data"):
+		var game_data = get_tree().get_meta("game_data")
+		if game_data.has("board_type"):
+			board_type = game_data["board_type"]
+	
+	# 设置棋盘类型（游戏逻辑和显示）
+	game_manager.set_board_type(board_type)
+	# 同步设置棋盘显示的类型
+	var display_board_type = Board.BoardType.ENGLISH_33
+	if board_type == GameManager.BoardType.FRENCH_37:
+		display_board_type = Board.BoardType.FRENCH_37
+	board.set_board_type(display_board_type)
 	
 	_create_pegs()
 	_center_board()
@@ -191,6 +219,25 @@ func _on_cell_clicked(pos: Vector2i) -> void:
 func _handle_interaction(pos: Vector2i) -> void:
 	var selected_pos = game_manager.get_selected_peg()
 	
+	# 处于连跳状态时的特殊逻辑
+	if game_manager.is_in_chain_jump():
+		var chain_pos = game_manager.get_chain_jump_pos()
+		
+		if pos == chain_pos:
+			# 点击当前连跳的棋子，结束连跳
+			game_manager.end_chain_jump()
+			_update_selection()
+			return
+		elif game_manager.can_move(chain_pos, pos):
+			# 继续连跳
+			_execute_move(chain_pos, pos)
+			return
+		else:
+			# 连跳中不允许其他操作
+			_play_hiss()
+			return
+	
+	# 正常状态的操作逻辑
 	if selected_pos == Vector2i(-1, -1):
 		# 没有选中棋子，尝试选中
 		if game_manager.has_peg(pos):
@@ -248,8 +295,7 @@ func _execute_move(from_pos: Vector2i, to_pos: Vector2i) -> void:
 	var moving_peg = pegs[from_pos]
 	var removed_peg = pegs[middle_pos]
 	
-	# 更新游戏状态
-	game_manager.deselect_peg()
+	# 更新游戏状态（不再调用 deselect_peg，make_move 会处理）
 	game_manager.make_move(from_pos, to_pos)
 	
 	# 更新棋子字典
@@ -297,8 +343,19 @@ func _execute_move(from_pos: Vector2i, to_pos: Vector2i) -> void:
 		remove_tween.tween_property(removed_peg, "scale", Vector2.ZERO, 0.2)
 		remove_tween.tween_property(removed_peg, "modulate:a", 0.0, 0.1)
 		remove_tween.tween_callback(removed_peg.queue_free)
-	
+
+func _on_chain_jump_available(pos: Vector2i, can_continue: bool) -> void:
+	# 延迟更新选中状态，等待动画完成
+	await get_tree().create_timer(0.35).timeout
 	_update_selection()
+	
+	if can_continue:
+		# 可以继续连跳，播放提示音
+		_play_meow()
+
+func _on_move_count_changed(count: int) -> void:
+	if move_count_label:
+		move_count_label.text = "步数: " + str(count)
 
 func _on_peg_count_changed(count: int) -> void:
 	if peg_count_label:
@@ -324,10 +381,10 @@ func _play_hiss() -> void:
 		hiss_player.play()
 
 func _on_restart_pressed() -> void:
-	game_manager.reset_game()
-	game_over_panel.visible = false
-	_create_pegs()
-	_update_selection()
+	# 显示确认弹窗
+	pending_confirm_action = ConfirmAction.RESTART
+	confirm_message.text = "确定要重新开始吗？"
+	confirm_dialog.visible = true
 
 func _on_close_pressed() -> void:
 	get_tree().quit()
@@ -339,3 +396,36 @@ func _on_about_pressed() -> void:
 func _on_close_about_pressed() -> void:
 	if about_panel:
 		about_panel.visible = false
+
+func _on_menu_pressed() -> void:
+	# 显示确认弹窗
+	pending_confirm_action = ConfirmAction.MENU
+	confirm_message.text = "确定要返回主菜单吗？"
+	confirm_dialog.visible = true
+
+func _on_confirm_yes_pressed() -> void:
+	confirm_dialog.visible = false
+	match pending_confirm_action:
+		ConfirmAction.RESTART:
+			game_manager.reset_game()
+			game_over_panel.visible = false
+			_create_pegs()
+			_update_selection()
+		ConfirmAction.MENU:
+			get_tree().change_scene_to_file("res://scenes/menu.tscn")
+
+func _on_confirm_no_pressed() -> void:
+	confirm_dialog.visible = false
+
+func _on_undo_pressed() -> void:
+	if game_manager.can_undo():
+		game_manager.undo_move()
+
+func _on_undo_available_changed(can_undo: bool) -> void:
+	if undo_btn:
+		undo_btn.disabled = not can_undo
+
+func _on_undo_performed() -> void:
+	# 撤销后重新创建棋子显示
+	_create_pegs()
+	_update_selection()

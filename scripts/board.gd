@@ -15,6 +15,9 @@ var highlighted_cells: Array[Vector2i] = []
 
 const BOARD_SIZE: int = 7
 
+## 棋盘类型枚举
+enum BoardType { ENGLISH_33, FRENCH_37 }
+
 # 英式33棋盘模板
 const ENGLISH_BOARD: Array = [
 	[-1, -1,  1,  1,  1, -1, -1],
@@ -26,15 +29,43 @@ const ENGLISH_BOARD: Array = [
 	[-1, -1,  1,  1,  1, -1, -1]
 ]
 
+# 法式37棋盘模板
+const FRENCH_BOARD: Array = [
+	[-1, -1,  1,  1,  1, -1, -1],
+	[-1,  1,  1,  1,  1,  1, -1],
+	[ 1,  1,  1,  1,  1,  1,  1],
+	[ 1,  1,  1,  1,  1,  1,  1],
+	[ 1,  1,  1,  1,  1,  1,  1],
+	[-1,  1,  1,  1,  1,  1, -1],
+	[-1, -1,  1,  1,  1, -1, -1]
+]
+
+var current_board_type: BoardType = BoardType.ENGLISH_33
+
 func _ready() -> void:
+	pass  # 等待 set_board_type 调用
+
+## 设置棋盘类型
+func set_board_type(board_type: BoardType) -> void:
+	current_board_type = board_type
 	_calculate_valid_cells()
+
+## 获取当前使用的棋盘布局
+func _get_current_board() -> Array:
+	match current_board_type:
+		BoardType.FRENCH_37:
+			return FRENCH_BOARD
+		_:
+			return ENGLISH_BOARD
 
 func _calculate_valid_cells() -> void:
 	valid_cells.clear()
+	var board_template = _get_current_board()
 	for y in range(BOARD_SIZE):
 		for x in range(BOARD_SIZE):
-			if ENGLISH_BOARD[y][x] != -1:
+			if board_template[y][x] != -1:
 				valid_cells.append(Vector2i(x, y))
+	queue_redraw()
 
 func _draw() -> void:
 	# 绘制棋盘背景

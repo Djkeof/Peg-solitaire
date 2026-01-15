@@ -1,0 +1,148 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="FontFile" uid="uid://font_chill" path="res://assets/fonts/ChillJinshuSongRegular.woff" id="1_font"]
+[ext_resource type="Script" path="res://scripts/menu.gd" id="2_menu"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn"]
+bg_color = Color(0.45, 0.3, 0.15, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.8, 0.6, 0.3, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="Theme" id="Theme_menu"]
+default_font = ExtResource("1_font")
+default_font_size = 20
+
+[node name="Menu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = SubResource("Theme_menu")
+script = ExtResource("2_menu")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.18, 0.22, 0.16, 1)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -150.0
+offset_right = 150.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 20
+
+[node name="Title" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
+text = "独立钻石棋"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+theme_override_colors/font_color = Color(0.7, 0.6, 0.5, 1)
+text = "Peg Solitaire"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="VBoxContainer"]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+
+[node name="English33Btn" type="Button" parent="VBoxContainer"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_styles/normal = SubResource("StyleBoxFlat_btn")
+text = "33格棋盘（英式）"
+
+[node name="French37Btn" type="Button" parent="VBoxContainer"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_styles/normal = SubResource("StyleBoxFlat_btn")
+text = "37格棋盘（法式）"
+
+[node name="AboutBtn" type="Button" parent="VBoxContainer"]
+custom_minimum_size = Vector2(200, 50)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_styles/normal = SubResource("StyleBoxFlat_btn")
+text = "关于"
+
+[node name="AboutPanel" type="Panel" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -120.0
+offset_right = 180.0
+offset_bottom = 120.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="AboutPanel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 15.0
+offset_top = 15.0
+offset_right = -15.0
+offset_bottom = -15.0
+
+[node name="Title" type="Label" parent="AboutPanel/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "关于"
+horizontal_alignment = 1
+
+[node name="Author" type="Label" parent="AboutPanel/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "作者: 毛伢一"
+horizontal_alignment = 1
+
+[node name="CatCredits" type="Label" parent="AboutPanel/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+text = "猫猫素材:
+toffeecraft @ itch.io
+carysaurus @ itch.io"
+horizontal_alignment = 1
+
+[node name="AINote" type="Label" parent="AboutPanel/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "本游戏由 AI 生成"
+horizontal_alignment = 1
+
+[node name="CloseAboutBtn" type="Button" parent="AboutPanel/VBoxContainer"]
+layout_mode = 2
+text = "关闭"
+
+[connection signal="pressed" from="VBoxContainer/English33Btn" to="." method="_on_english_33_btn_pressed"]
+[connection signal="pressed" from="VBoxContainer/French37Btn" to="." method="_on_french_37_btn_pressed"]
+[connection signal="pressed" from="VBoxContainer/AboutBtn" to="." method="_on_about_btn_pressed"]
+[connection signal="pressed" from="AboutPanel/VBoxContainer/CloseAboutBtn" to="." method="_on_close_about_btn_pressed"]

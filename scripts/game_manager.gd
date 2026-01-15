@@ -5,8 +5,15 @@ class_name GameManager
 
 signal game_over(remaining_pegs: int, rating: String)
 signal peg_count_changed(count: int)
+signal move_count_changed(count: int)
+signal chain_jump_available(pos: Vector2i, can_continue: bool)  # 通知是否可以继续连跳
+signal undo_available_changed(can_undo: bool)  # 通知是否可以撤销
+signal undo_performed()  # 通知撤销已执行
 
-# 英式33棋盘布局 (7x7, 但角落4格各去掉)
+## 棋盘类型枚举
+enum BoardType { ENGLISH_33, FRENCH_37 }
+
+# 英式33格棋盘布局 (7x7, 角落各去掉4格，共33格)
 # 1 = 有棋子, 0 = 空位, -1 = 无效位置
 const ENGLISH_BOARD: Array = [
 	[-1, -1,  1,  1,  1, -1, -1],
@@ -18,30 +25,75 @@ const ENGLISH_BOARD: Array = [
 	[-1, -1,  1,  1,  1, -1, -1]
 ]
 
+# 法式37格棋盘布局 (7x7, 四角各去掉3格，共37格)
+const FRENCH_BOARD: Array = [
+	[-1, -1,  1,  1,  1, -1, -1],
+	[-1,  1,  1,  1,  1,  1, -1],
+	[ 1,  1,  1,  1,  1,  1,  1],
+	[ 1,  1,  1,  0,  1,  1,  1],  # 中心为空
+	[ 1,  1,  1,  1,  1,  1,  1],
+	[-1,  1,  1,  1,  1,  1, -1],
+	[-1, -1,  1,  1,  1, -1, -1]
+]
+
 const BOARD_SIZE: int = 7
 const CENTER_POS: Vector2i = Vector2i(3, 3)
+
+var current_board_type: BoardType = BoardType.ENGLISH_33
 
 var board_state: Array = []
 var selected_peg_pos: Vector2i = Vector2i(-1, -1)
 var peg_count: int = 0
+var move_count: int = 0
+var is_chain_jumping: bool = false  # 是否正在连跳中
+var chain_jump_pos: Vector2i = Vector2i(-1, -1)  # 连跳中的棋子位置
+
+# 撤销功能：保存每步的移动记录
+# 每个元素格式: {"moves": [{"from": Vector2i, "to": Vector2i, "eaten": Vector2i}, ...], "peg_count_before": int}
+var move_history: Array = []
+var current_step_moves: Array = []  # 当前步骤的移动（用于连跳）
+var peg_count_before_step: int = 0  # 当前步骤开始前的棋子数
 
 func _ready() -> void:
+	pass  # 不自动初始化，等待外部调用 set_board_type
+
+## 设置棋盘类型并重置游戏
+func set_board_type(board_type: BoardType) -> void:
+	current_board_type = board_type
 	reset_game()
+
+## 获取当前使用的棋盘布局
+func _get_current_board() -> Array:
+	match current_board_type:
+		BoardType.FRENCH_37:
+			return FRENCH_BOARD
+		_:
+			return ENGLISH_BOARD
 
 func reset_game() -> void:
 	board_state = []
 	peg_count = 0
+	move_count = 0
 	selected_peg_pos = Vector2i(-1, -1)
+	is_chain_jumping = false
+	chain_jump_pos = Vector2i(-1, -1)
+	move_history.clear()
+	current_step_moves.clear()
+	peg_count_before_step = 0
+	
+	var board_template = _get_current_board()
 	
 	for y in range(BOARD_SIZE):
 		var row: Array = []
 		for x in range(BOARD_SIZE):
-			row.append(ENGLISH_BOARD[y][x])
-			if ENGLISH_BOARD[y][x] == 1:
+			row.append(board_template[y][x])
+			if board_template[y][x] == 1:
 				peg_count += 1
 		board_state.append(row)
 	
 	peg_count_changed.emit(peg_count)
+	move_count_changed.emit(move_count)
+	undo_available_changed.emit(false)
 
 func is_valid_position(pos: Vector2i) -> bool:
 	if pos.x < 0 or pos.x >= BOARD_SIZE or pos.y < 0 or pos.y >= BOARD_SIZE:
@@ -90,6 +142,17 @@ func make_move(from_pos: Vector2i, to_pos: Vector2i) -> bool:
 	
 	var middle_pos: Vector2i = (from_pos + to_pos) / 2
 	
+	# 如果这是新的一步（不是连跳），记录当前棋子数
+	if current_step_moves.is_empty():
+		peg_count_before_step = peg_count
+	
+	# 记录这次移动
+	current_step_moves.append({
+		"from": from_pos,
+		"to": to_pos,
+		"eaten": middle_pos
+	})
+	
 	# 移动棋子
 	board_state[from_pos.y][from_pos.x] = 0
 	board_state[middle_pos.y][middle_pos.x] = 0
@@ -98,12 +161,92 @@ func make_move(from_pos: Vector2i, to_pos: Vector2i) -> bool:
 	peg_count -= 1
 	peg_count_changed.emit(peg_count)
 	
+	# 检查是否可以继续连跳
+	var can_continue = get_valid_moves(to_pos).size() > 0
+	
+	if can_continue:
+		# 开始或继续连跳
+		is_chain_jumping = true
+		chain_jump_pos = to_pos
+		selected_peg_pos = to_pos
+		chain_jump_available.emit(to_pos, true)
+	else:
+		# 无法继续连跳，结束当前步
+		_finish_move()
+		chain_jump_available.emit(to_pos, false)
+	
+	return true
+
+## 结束连跳（玩家选择不继续跳）
+func end_chain_jump() -> void:
+	if is_chain_jumping:
+		_finish_move()
+
+## 完成一步移动（内部方法）
+func _finish_move() -> void:
+	# 保存当前步骤到历史记录
+	if not current_step_moves.is_empty():
+		move_history.append({
+			"moves": current_step_moves.duplicate(true),
+			"peg_count_before": peg_count_before_step
+		})
+		current_step_moves.clear()
+		undo_available_changed.emit(true)
+	
+	is_chain_jumping = false
+	chain_jump_pos = Vector2i(-1, -1)
+	move_count += 1
+	move_count_changed.emit(move_count)
+	deselect_peg()
+	
 	# 检查游戏是否结束
 	if not has_any_valid_moves():
 		var rating = get_rating()
 		game_over.emit(peg_count, rating)
+
+## 检查是否可以撤销
+func can_undo() -> bool:
+	return not move_history.is_empty() and not is_chain_jumping
+
+## 撤销上一步
+func undo_move() -> bool:
+	if not can_undo():
+		return false
+	
+	var last_step = move_history.pop_back()
+	var moves_to_undo: Array = last_step["moves"]
+	var peg_count_before: int = last_step["peg_count_before"]
+	
+	# 倒序撤销每个移动
+	for i in range(moves_to_undo.size() - 1, -1, -1):
+		var move_data = moves_to_undo[i]
+		var from_pos: Vector2i = move_data["from"]
+		var to_pos: Vector2i = move_data["to"]
+		var eaten_pos: Vector2i = move_data["eaten"]
+		
+		# 恢复棋盘状态
+		board_state[to_pos.y][to_pos.x] = 0
+		board_state[eaten_pos.y][eaten_pos.x] = 1
+		board_state[from_pos.y][from_pos.x] = 1
+	
+	# 恢复棋子数和步数
+	peg_count = peg_count_before
+	move_count -= 1
+	
+	peg_count_changed.emit(peg_count)
+	move_count_changed.emit(move_count)
+	undo_available_changed.emit(not move_history.is_empty())
+	undo_performed.emit()
 	
 	return true
+
+## 检查是否正在连跳中
+func is_in_chain_jump() -> bool:
+	return is_chain_jumping
+
+## 获取连跳中的棋子位置
+func get_chain_jump_pos() -> Vector2i:
+	return chain_jump_pos
 
 func has_any_valid_moves() -> bool:
 	for y in range(BOARD_SIZE):
