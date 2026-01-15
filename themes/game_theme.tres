@@ -1,0 +1,10 @@
+[gd_resource type="Theme" format=3 uid="uid://game_theme_cn"]
+
+[ext_resource type="FontFile" uid="uid://font_chill" path="res://assets/fonts/ChillJinshuSongRegular.woff" id="1_font"]
+
+[resource]
+default_font = ExtResource("1_font")
+default_font_size = 16
+
+Button/font_sizes/font_size = 16
+Label/font_sizes/font_size = 16
